@@ -1,0 +1,16 @@
+PROJECT (fortmetrics)
+# A list of source files
+SET(PROJECT_SRCS
+    fortmetrics.cpp
+)
+# A list of headers
+SET(PROJECT_HDRS
+    fortmetrics.h
+)
+SET_SOURCE_FILES_PROPERTIES( ${PROJECT_HDRS} PROPERTIES HEADER_FILE_ONLY TRUE)
+
+# mash them together (headers are marked as headers and nothing will try to compile them)
+LIST(APPEND PROJECT_SRCS ${PROJECT_HDRS})
+
+# this makes sure all the stuff is put in proper places and linked to dfhack
+DFHACK_PLUGIN(skeleton ${PROJECT_SRCS})
