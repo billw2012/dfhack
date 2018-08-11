@@ -4,3 +4,8 @@ VC2015_32
 DF_PATH.txt
 _CPack_Packages
 *.tar.*
+*.sln
+*.vcxproj*
+win64/DF/*
+dfhack_setarch.txt
+ImportExecutables.cmake
