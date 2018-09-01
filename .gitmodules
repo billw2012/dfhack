@@ -17,7 +17,3 @@
 	path = depends/jsoncpp-sub
 	url = ../../open-source-parsers/jsoncpp.git
 	ignore = dirty
-[submodule "depends/curl"]
-	path = depends/curl
-	url = ../../billw2012/curl.git
-	ignore = dirty

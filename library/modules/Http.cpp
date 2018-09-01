@@ -3,21 +3,21 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <unordered_map>
 
-#include "modules/Curl.h"
+#include "modules/Http.h"
 #include "LuaTools.h"
 
 #include "json/json.h"
 #include "tinythread.h"
 #include "lua.h"
 #include "lauxlib.h"
-#define CURL_STATICLIB
-#include "curl/curl.h"
+#include "happyhttp.h"
 
 namespace DFHack { ;
-namespace Curl { ;
+namespace Http { ;
 
-static const char* const s_module_name = "Curl";
+static const char* const s_module_name = "Http";
 
 namespace { ;
     
@@ -150,10 +150,52 @@ static Json::Value parse(lua_State *L, int32_t index, bool parseNumbersAsDouble 
 
 }
 
+
+/* Original code: http://stackoverflow.com/questions/2616011/easy-way-to-parse-a-url-in-c-cross-platform */
+bool parse_url(const std::string& url_s, std::string& protocol_, std::string& host_, std::string& path_, std::string& query_)
+{
+    using namespace std;
+    const string prot_end("://");
+
+    string::const_iterator prot_i = search(url_s.begin(), url_s.end(), prot_end.begin(), prot_end.end());
+    protocol_.reserve(distance(url_s.begin(), prot_i));
+
+    transform(url_s.begin(), prot_i, back_inserter(protocol_), ptr_fun<int, int>(tolower)); // protocol is icase
+
+    if (prot_i == url_s.end())
+        return false;
+
+    advance(prot_i, prot_end.length());
+    string::const_iterator path_i = find(prot_i, url_s.end(), '/');
+    host_.reserve(distance(prot_i, path_i));
+    transform(prot_i, path_i, back_inserter(host_), ptr_fun<int, int>(tolower)); // host is icase
+    string::const_iterator query_i = find(path_i, url_s.end(), '?');
+    path_.assign(path_i, query_i);
+    if (query_i != url_s.end())
+        ++query_i;
+
+    query_.assign(query_i, url_s.end());
+    return true;
+}
+
 struct SendThread
 {
-    std::shared_ptr<CURL> curl;
-    std::unique_ptr<tthread::thread> post_thread;
+    struct ConnectionWrapper
+    {
+        ConnectionWrapper(const char* host, int port, happyhttp::ResponseBegin_CB begincb, happyhttp::ResponseData_CB datacb, happyhttp::ResponseComplete_CB completecb, void* userdata)
+            : conn(host, port) 
+        {
+            conn.setcallbacks(begincb, datacb, completecb, userdata);
+        }
+
+        std::time_t last_used;
+        happyhttp::Connection conn;
+        tthread::mutex mutex;
+    };
+
+    tthread::mutex connections_mutex;
+    std::unordered_map<std::string, std::shared_ptr<ConnectionWrapper>> connections;
+    std::unique_ptr<tthread::thread> conn_thread;
 
     struct Post
     {
@@ -164,7 +206,9 @@ struct SendThread
     tthread::mutex post_queue_mutex;
     tthread::condition_variable post_queue_items_present;
     std::vector<Post> post_queue;
-    bool terminate_post_thread = false;
+    std::unique_ptr<tthread::thread> post_thread;
+
+    bool terminate_threads = false;
     bool debug = false;
 
     // Make it a singleton for now.
@@ -176,23 +220,25 @@ struct SendThread
     
     SendThread()
     {
-        auto curl_ptr = curl_easy_init();
-        if (curl_ptr == nullptr)
-        {
-            Core::printerr("%s init failed: error initializing libcurl\n", s_module_name);
-            return;
-        }
-        curl = std::shared_ptr<CURL>(curl_ptr, [](CURL* ptr) { curl_easy_cleanup(ptr); });
+        happyhttp::init();
+
+        conn_thread.reset(new tthread::thread(&conn_thread_fn, this));
         post_thread.reset(new tthread::thread(&post_thread_fn, this));
     }
 
     ~SendThread()
     {
-        terminate_post_thread = true;
-        post_queue_items_present.notify_all();
-        post_thread.reset();
+        // Use the validity of the conn_thread as a flag to indicate we were successfully initialized and should shut down
+        // cleanly
+        if (conn_thread)
+        {
+            terminate_threads = true;
+            post_queue_items_present.notify_all();
+            conn_thread.reset();
+            post_thread.reset();
 
-        curl.reset();
+            happyhttp::shutdown();
+        }
     }
 
     void send(const std::string& url, const Json::Value& value)
@@ -203,12 +249,63 @@ struct SendThread
     }
 
 private:
+    static void conn_thread_fn(void* this_raw)
+    {
+        auto this_ptr = static_cast<SendThread*>(this_raw);
+        std::vector<std::shared_ptr<ConnectionWrapper>> connections_to_pump;
+
+        while (!this_ptr->terminate_threads)
+        {
+            {
+                auto t = std::time(nullptr);
+                tthread::lock_guard<tthread::mutex> guard(this_ptr->connections_mutex);
+                connections_to_pump.clear();
+                for (auto& conn : this_ptr->connections)
+                {
+                    connections_to_pump.push_back(conn.second);
+                    // TODO: cull old/dead connections
+                    //if (std::difftime(std::time(nullptr), conn.second->last_used) > 30)
+                    //{
+
+                    //}
+                }
+            }
+
+            for (auto& conn : connections_to_pump)
+            {
+                tthread::lock_guard<tthread::mutex> guard(conn->mutex);
+                conn->conn.pump();
+            }
+
+            // Is this a reasonable interval?
+            tthread::this_thread::sleep_for(tthread::chrono::milliseconds(100));
+        }
+    }
+
+    static void ResponseBegin_CB(const happyhttp::Response* /*r*/, void* /*userdata*/)
+    {
+        // Unused
+        //auto this_ptr = static_cast<SendThread*>(userdata);
+    }
+
+    static void ResponseData_CB(const happyhttp::Response* /*r*/, void* /*userdata*/, const unsigned char* /*data*/, int /*numbytes*/)
+    {
+        // Unused
+        //auto this_ptr = static_cast<SendThread*>(userdata);
+    }
+
+    static void ResponseComplete_CB(const happyhttp::Response* /*r*/, void* /*userdata*/)
+    {
+        // Unused
+        //auto this_ptr = static_cast<SendThread*>(userdata);
+    }
+
     static void post_thread_fn(void* this_raw)
     {
         auto this_ptr = static_cast<SendThread*>(this_raw);
 
         std::vector<Post> curr_post_queue;
-        while (!this_ptr->terminate_post_thread)
+        while (!this_ptr->terminate_threads)
         {
             {
                 tthread::lock_guard<tthread::mutex> guard(this_ptr->post_queue_mutex);
@@ -230,46 +327,111 @@ private:
         }
     }
 
-    void post_value(const std::string& url, const Json::Value& value)
+    void post_value(std::string url, const Json::Value& value)
     {
-        CURLcode res;
+        static const char* headers[] = {
+            "Accept: application/json",
+            "Content-Type: application/json",
+            "charsets: utf-8"
+        };
+
+        std::transform(url.begin(), url.end(), url.begin(), ::tolower);
+
+        std::string protocol, host_port, path, query;
+        parse_url(url, protocol, host_port, path, query);
+        std::string connection_name = protocol + host_port;
+
+        std::string host = host_port;
+        // default to http default port
+        int port = 80;
+        auto port_idx = host_port.find(':');
+        if (port_idx != std::string::npos)
+        {
+            host = host_port.substr(0, port_idx);
+            port = std::atoi(host_port.substr(port_idx + 1).c_str());
+        }
+
+        std::shared_ptr<ConnectionWrapper> conn;
+        // Find an existing connection or create one
+        {
+            tthread::lock_guard<tthread::mutex> guard(connections_mutex);
+            auto existing_conn = connections.find(connection_name);
+            if (existing_conn == connections.end())
+            {
+                conn = std::make_shared<ConnectionWrapper>(host.c_str(), port, ResponseBegin_CB, ResponseData_CB, ResponseComplete_CB, this);
+                connections[connection_name] = conn;
+            }
+            else
+            {
+                conn = existing_conn->second;
+            }
+        }
+
         std::string str = value.toStyledString();
-        curl_easy_setopt(curl.get(), CURLOPT_VERBOSE, 1);
-        curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl.get(), CURLOPT_POST, 1);
-        struct curl_slist *headers = NULL;
-        headers = curl_slist_append(headers, "Accept: application/json");
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-        headers = curl_slist_append(headers, "charsets: utf-8");
-        curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, str.c_str());
-        curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, str.length());
+
         if (debug)
         {
             Core::print("%s Sending to %s...\n%s\n", s_module_name, url.c_str(), str.c_str());
         }
-        res = curl_easy_perform(curl.get());
-        if (res != CURLE_OK)
+
         {
-            Core::print("%s Error sending to %s: %s\n", s_module_name, url.c_str(), curl_easy_strerror(res));
+            tthread::lock_guard<tthread::mutex> guard(conn->mutex);
+            try
+            {
+                conn->conn.request("POST", url.c_str(), headers, reinterpret_cast<const unsigned char*>(str.c_str()), str.length());
+            }
+            catch (const happyhttp::happyhttp_exception& ex)
+            {
+                Core::print("%s Error sending to %s: %s\n", s_module_name, url.c_str(), ex.what());
+            }
         }
+
         if (debug)
         {
             Core::print("%s ...done\n", s_module_name);
         }
+
+        //CURLcode res;
+        //std::string str = value.toStyledString();
+        //curl_easy_setopt(curl.get(), CURLOPT_VERBOSE, 1);
+        //curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
+        //curl_easy_setopt(curl.get(), CURLOPT_POST, 1);
+        //struct curl_slist *headers = NULL;
+        //headers = curl_slist_append(headers, "Accept: application/json");
+        //headers = curl_slist_append(headers, "Content-Type: application/json");
+        //headers = curl_slist_append(headers, "charsets: utf-8");
+        //curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers);
+        //curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, str.c_str());
+        //curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, str.length());
+        //res = curl_easy_perform(curl.get());
+        //if (res != CURLE_OK)
+        //{
+        //    Core::print("%s Error sending to %s: %s\n", s_module_name, url.c_str(), curl_easy_strerror(res));
+        //}
+        //if (debug)
+        //{
+        //    Core::print("%s ...done\n", s_module_name);
+        //}
     }
 };
 
-int send_as_json(lua_State* state)
+int post_as_json(lua_State* state)
 {
     if (lua_gettop(state) != 2)
     {
-        return luaL_error(state, "Invalid number of parameters. Usage: send_as_json(url, object)");
+        return luaL_error(state, "Invalid number of parameters. Usage: post_as_json(url, object)");
     }
     auto url = lua_tostring(state, 1);
     auto val = parse(state, 2);
     lua_pop(state, 2);
-    SendThread::get().send(url, val);
+    try
+    {
+        SendThread::get().send(url, val);
+    }
+    catch (const happyhttp::happyhttp_exception& ex)
+    {
+        return luaL_error(state, ex.what());
+    }
 
     return 0;
 }

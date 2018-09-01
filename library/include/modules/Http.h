@@ -7,9 +7,9 @@
 #include "Core.h"
 
 namespace DFHack {;
-namespace Curl {;
+namespace Http {;
 
-int send_as_json(lua_State* state);
+int post_as_json(lua_State* state);
 int to_json_string(lua_State* state);
 int get_iso8601_timestamp(lua_State* state);
 

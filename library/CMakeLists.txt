@@ -128,7 +128,7 @@ include/modules/Notes.h
 include/modules/Once.h
 include/modules/Random.h
 include/modules/Renderer.h
-include/modules/Curl.h
+include/modules/Http.h
 include/modules/Screen.h
 include/modules/Translation.h
 include/modules/Units.h
@@ -155,7 +155,7 @@ modules/Notes.cpp
 modules/Once.cpp
 modules/Random.cpp
 modules/Renderer.cpp
-modules/Curl.cpp
+modules/Http.cpp
 modules/Screen.cpp
 modules/Translation.cpp
 modules/Units.cpp
@@ -394,7 +394,7 @@ IF(APPLE)
     SET_TARGET_PROPERTIES(dfhack PROPERTIES SOVERSION 1.0.0)
 ENDIF()
 
-TARGET_LINK_LIBRARIES(dfhack protobuf-lite clsocket lua jsoncpp_lib_static libcurl dfhack-version ${PROJECT_LIBS})
+TARGET_LINK_LIBRARIES(dfhack protobuf-lite clsocket lua jsoncpp_lib_static happyhttp dfhack-version ${PROJECT_LIBS})
 SET_TARGET_PROPERTIES(dfhack PROPERTIES INTERFACE_LINK_LIBRARIES "")
 
 TARGET_LINK_LIBRARIES(dfhack-client protobuf-lite clsocket jsoncpp_lib_static)
