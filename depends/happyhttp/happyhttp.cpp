@@ -61,48 +61,94 @@ using namespace std;
 
 namespace happyhttp{;
 
+namespace{;
+
+// HTTP status codes
+enum {
+    // 1xx informational
+    CONTINUE = 100,
+    SWITCHING_PROTOCOLS = 101,
+    PROCESSING = 102,
+
+    // 2xx successful
+    OK = 200,
+    CREATED = 201,
+    ACCEPTED = 202,
+    NON_AUTHORITATIVE_INFORMATION = 203,
+    NO_CONTENT = 204,
+    RESET_CONTENT = 205,
+    PARTIAL_CONTENT = 206,
+    MULTI_STATUS = 207,
+    IM_USED = 226,
+
+    // 3xx redirection
+    MULTIPLE_CHOICES = 300,
+    MOVED_PERMANENTLY = 301,
+    FOUND = 302,
+    SEE_OTHER = 303,
+    NOT_MODIFIED = 304,
+    USE_PROXY = 305,
+    TEMPORARY_REDIRECT = 307,
+
+    // 4xx client error
+    BAD_REQUEST = 400,
+    UNAUTHORIZED = 401,
+    PAYMENT_REQUIRED = 402,
+    FORBIDDEN = 403,
+    NOT_FOUND = 404,
+    METHOD_NOT_ALLOWED = 405,
+    NOT_ACCEPTABLE = 406,
+    PROXY_AUTHENTICATION_REQUIRED = 407,
+    REQUEST_TIMEOUT = 408,
+    CONFLICT = 409,
+    GONE = 410,
+    LENGTH_REQUIRED = 411,
+    PRECONDITION_FAILED = 412,
+    REQUEST_ENTITY_TOO_LARGE = 413,
+    REQUEST_URI_TOO_LONG = 414,
+    UNSUPPORTED_MEDIA_TYPE = 415,
+    REQUESTED_RANGE_NOT_SATISFIABLE = 416,
+    EXPECTATION_FAILED = 417,
+    UNPROCESSABLE_ENTITY = 422,
+    LOCKED = 423,
+    FAILED_DEPENDENCY = 424,
+    UPGRADE_REQUIRED = 426,
+
+    // 5xx server error
+    INTERNAL_SERVER_ERROR = 500,
+    NOT_IMPLEMENTED = 501,
+    BAD_GATEWAY = 502,
+    SERVICE_UNAVAILABLE = 503,
+    GATEWAY_TIMEOUT = 504,
+    HTTP_VERSION_NOT_SUPPORTED = 505,
+    INSUFFICIENT_STORAGE = 507,
+    NOT_EXTENDED = 510,
+};
+
+
 #ifdef WIN32
-const char* GetWinsockErrorString( int err );
+const char* GetWinsockErrorString(int err);
 #endif
-
-void init()
-{
-#ifdef WIN32
-    WSAData wsaData;
-    int code = WSAStartup(MAKEWORD(1, 1), &wsaData);
-    if (code != 0)
-    {
-        throw happyhttp_exception("WSAStartup returned error %s\n", GetWinsockErrorString(code));
-    }
-#endif //WIN32
-}
-
-void shutdown()
-{
-#ifdef WIN32
-    WSACleanup();
-#endif // WIN32
-}
 
 //---------------------------------------------------------------------
 // Helper functions
 //---------------------------------------------------------------------
-void BailOnSocketError( const char* context )
+void BailOnSocketError(const char* context)
 {
 #ifdef WIN32
     int e = WSAGetLastError();
-    const char* msg = GetWinsockErrorString( e );
+    const char* msg = GetWinsockErrorString(e);
 #else
-    const char* msg = strerror( errno );
+    const char* msg = strerror(errno);
 #endif
-    throw happyhttp_exception( "%s: %s", context, msg );
+    throw happyhttp_exception("%s: %s", context, msg);
 }
 
 #ifdef WIN32
 
-const char* GetWinsockErrorString( int err )
+const char* GetWinsockErrorString(int err)
 {
-    switch( err)
+    switch (err)
     {
     case 0:                 return "No error";
     case WSAEINTR:          return "Interrupted system call";
@@ -162,21 +208,21 @@ const char* GetWinsockErrorString( int err )
 #endif // WIN32
 
 // return true if socket has data waiting to be read
-bool datawaiting( int sock )
+bool datawaiting(int sock)
 {
     fd_set fds;
-    FD_ZERO( &fds );
-    FD_SET( sock, &fds );
+    FD_ZERO(&fds);
+    FD_SET(sock, &fds);
 
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 0;
 
-    int r = select( sock+1, &fds, NULL, NULL, &tv);
+    int r = select(sock + 1, &fds, NULL, NULL, &tv);
     if (r < 0)
-        BailOnSocketError( "select" );
+        BailOnSocketError("select");
 
-    if( FD_ISSET( sock, &fds ) )
+    if (FD_ISSET(sock, &fds))
         return true;
     else
         return false;
@@ -184,7 +230,7 @@ bool datawaiting( int sock )
 
 // Try to work out address from string
 // returns 0 if bad
-struct in_addr *atoaddr( const char* address)
+struct in_addr *atoaddr(const char* address)
 {
     struct hostent *host;
     static struct in_addr saddr;
@@ -195,10 +241,30 @@ struct in_addr *atoaddr( const char* address)
         return &saddr;
 
     host = gethostbyname(address);
-    if( host )
+    if (host)
         return (struct in_addr *) *host->h_addr_list;
 
     return 0;
+}
+
+}
+void init()
+{
+#ifdef WIN32
+    WSAData wsaData;
+    int code = WSAStartup(MAKEWORD(1, 1), &wsaData);
+    if (code != 0)
+    {
+        throw happyhttp_exception("WSAStartup returned error %s\n", GetWinsockErrorString(code));
+    }
+#endif //WIN32
+}
+
+void shutdown()
+{
+#ifdef WIN32
+    WSACleanup();
+#endif // WIN32
 }
 
 //---------------------------------------------------------------------

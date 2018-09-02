@@ -19,6 +19,7 @@
  *
  * 2. Altered source versions must be plainly marked as such, and must not
  * be misrepresented as being the original software.
+ *    ****** [1/9/2018 billw2012] This version is significantly modified from the original
  * 
  * 3. This notice may not be removed or altered from any source distribution.
  *
@@ -31,85 +32,26 @@
 #include <vector>
 #include <deque>
 
-// forward decl
-struct in_addr;
+// TODO:
+//  - Move implementations out of the header
+//  - Clean up the naming and style
+//  - Encapsulate a send/receive thread and automatic connection management, inactivity etc.
+//  - Blocking and non blocking versions of send commands
+//  - Automatic headers
+//  - Response content?
 
 namespace happyhttp{;
 
+// Initialize the http library, call before doing anything else, can throw happyhttp_exception on error.
 void init();
+// Shutdown the http library, call before exit, matching each call to init that didn't throw an exception.
 void shutdown();
 
 class Response;
 
-// Helper Functions
-void BailOnSocketError( const char* context );
-struct in_addr *atoaddr( const char* address);
-
 typedef void (*ResponseBegin_CB)( const Response* r, void* userdata );
 typedef void (*ResponseData_CB)( const Response* r, void* userdata, const unsigned char* data, int numbytes );
 typedef void (*ResponseComplete_CB)( const Response* r, void* userdata );
-
-// HTTP status codes
-enum {
-    // 1xx informational
-    CONTINUE = 100,
-    SWITCHING_PROTOCOLS = 101,
-    PROCESSING = 102,
-
-    // 2xx successful
-    OK = 200,
-    CREATED = 201,
-    ACCEPTED = 202,
-    NON_AUTHORITATIVE_INFORMATION = 203,
-    NO_CONTENT = 204,
-    RESET_CONTENT = 205,
-    PARTIAL_CONTENT = 206,
-    MULTI_STATUS = 207,
-    IM_USED = 226,
-
-    // 3xx redirection
-    MULTIPLE_CHOICES = 300,
-    MOVED_PERMANENTLY = 301,
-    FOUND = 302,
-    SEE_OTHER = 303,
-    NOT_MODIFIED = 304,
-    USE_PROXY = 305,
-    TEMPORARY_REDIRECT = 307,
-    
-    // 4xx client error
-    BAD_REQUEST = 400,
-    UNAUTHORIZED = 401,
-    PAYMENT_REQUIRED = 402,
-    FORBIDDEN = 403,
-    NOT_FOUND = 404,
-    METHOD_NOT_ALLOWED = 405,
-    NOT_ACCEPTABLE = 406,
-    PROXY_AUTHENTICATION_REQUIRED = 407,
-    REQUEST_TIMEOUT = 408,
-    CONFLICT = 409,
-    GONE = 410,
-    LENGTH_REQUIRED = 411,
-    PRECONDITION_FAILED = 412,
-    REQUEST_ENTITY_TOO_LARGE = 413,
-    REQUEST_URI_TOO_LONG = 414,
-    UNSUPPORTED_MEDIA_TYPE = 415,
-    REQUESTED_RANGE_NOT_SATISFIABLE = 416,
-    EXPECTATION_FAILED = 417,
-    UNPROCESSABLE_ENTITY = 422,
-    LOCKED = 423,
-    FAILED_DEPENDENCY = 424,
-    UPGRADE_REQUIRED = 426,
-
-    // 5xx server error
-    INTERNAL_SERVER_ERROR = 500,
-    NOT_IMPLEMENTED = 501,
-    BAD_GATEWAY = 502,
-    SERVICE_UNAVAILABLE = 503,
-    GATEWAY_TIMEOUT = 504,
-    HTTP_VERSION_NOT_SUPPORTED = 505,
-    INSUFFICIENT_STORAGE = 507,
-    NOT_EXTENDED = 510,
-};
 
 // Exception class
 class happyhttp_exception
@@ -163,8 +105,7 @@ public:
     void pump();
 
     // any requests still outstanding?
-    bool outstanding() const
-        { return !m_Outstanding.empty(); }
+    bool outstanding() const { return !m_Outstanding.empty(); }
 
     // ---------------------------
     // high-level request interface
@@ -174,8 +115,7 @@ public:
     // url is only path part: eg  "/index.html"
     // headers is array of name/value pairs, terminated by a null-ptr
     // body & bodysize specify body data of request (eg values for a form)
-    void request( const char* method, const char* url, const char* headers[]=0,
-        const unsigned char* body=0, int bodysize=0 );
+    void request( const char* method, const char* url, const char* headers[]=0, const unsigned char* body=0, int bodysize=0 );
 
     // ---------------------------
     // low-level request interface
@@ -212,7 +152,6 @@ private:
     int m_Port;
     int m_Sock;
     std::vector< std::string > m_Buffer;    // lines of request
-
     std::deque< Response* > m_Outstanding;  // responses for outstanding requests
 };
 
@@ -229,9 +168,7 @@ public:
     // retrieve a header (returns 0 if not present)
     const char* getheader( const char* name ) const;
 
-    bool completed() const
-        { return m_State == COMPLETE; }
-
+    bool completed() const { return m_State == COMPLETE; }
 
     // get the HTTP status code
     int getstatus() const;
@@ -240,8 +177,8 @@ public:
     const char* getreason() const;
 
     // true if connection is expected to close after this response.
-    bool willclose() const
-        { return m_WillClose; }
+    bool willclose() const { return m_WillClose; }
+
 protected:
     // interface used by Connection
 

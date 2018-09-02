@@ -330,9 +330,10 @@ private:
     void post_value(std::string url, const Json::Value& value)
     {
         static const char* headers[] = {
-            "Accept: application/json",
-            "Content-Type: application/json",
-            "charsets: utf-8"
+            "Accept", "application/json",
+            "Content-Type", "application/json",
+            "charsets", "utf-8",
+            nullptr
         };
 
         std::transform(url.begin(), url.end(), url.begin(), ::tolower);
@@ -390,28 +391,6 @@ private:
         {
             Core::print("%s ...done\n", s_module_name);
         }
-
-        //CURLcode res;
-        //std::string str = value.toStyledString();
-        //curl_easy_setopt(curl.get(), CURLOPT_VERBOSE, 1);
-        //curl_easy_setopt(curl.get(), CURLOPT_URL, url.c_str());
-        //curl_easy_setopt(curl.get(), CURLOPT_POST, 1);
-        //struct curl_slist *headers = NULL;
-        //headers = curl_slist_append(headers, "Accept: application/json");
-        //headers = curl_slist_append(headers, "Content-Type: application/json");
-        //headers = curl_slist_append(headers, "charsets: utf-8");
-        //curl_easy_setopt(curl.get(), CURLOPT_HTTPHEADER, headers);
-        //curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDS, str.c_str());
-        //curl_easy_setopt(curl.get(), CURLOPT_POSTFIELDSIZE, str.length());
-        //res = curl_easy_perform(curl.get());
-        //if (res != CURLE_OK)
-        //{
-        //    Core::print("%s Error sending to %s: %s\n", s_module_name, url.c_str(), curl_easy_strerror(res));
-        //}
-        //if (debug)
-        //{
-        //    Core::print("%s ...done\n", s_module_name);
-        //}
     }
 };
 
